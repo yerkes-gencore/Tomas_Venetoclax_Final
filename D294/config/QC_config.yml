@@ -1,0 +1,20 @@
+# Analysis title
+analysis: p24155_Tomas_Processing
+# STAR reference genome directory use for aligning, should holds "geneInfo.tab" 
+referenceDir: /yerkes-cifs/runs/Genome_references/composite/macaca_mulatta_siv/Mmul10_SIVsm804ECL757/STAR-2.7.9a/
+# STAR feature counts files directory
+alignmentDir: /yerkes-cifs/runs/Analysis/2024_Analyses/p24155_Tomas/p24155_Tomas_Processing/S2.7.9a_Mmul10_SIVsm804ECL757
+# column of the STAR output file to draw from (unstranded, sense, or antisense)
+libraryType: unstranded
+# Samples to drop, using the same names as the "sample ID" column of the exp_design_template
+dropSamples:
+-
+# Metadata to use for PCA plot overlays. Use column names in the exp_design file. Leave blank to ignore aes
+pcaMapping: 
+  color: SubjectID
+  shape: Group
+  label: SampleID
+  path: 
+  ellipse: 
+# Suffix of files produced by STAR
+STARreadSuffix: "_ReadsPerGene.out.tab"
