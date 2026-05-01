@@ -1,0 +1,125 @@
+---
+title: "GSVA Analysis"
+author: "Sydney"
+date: "2025-09-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(DESeq2)
+library(GSVA)
+library(msigdbr)   
+library(dplyr)
+library(biomaRt)
+library(tibble)
+library(tidyverse)
+```
+
+```{r Load Counts}
+counts <- read.csv("/Volumes/yerkes/genomelab/illumina/runs/Analysis_BLab/Sydney/GSVA for Mirko/raw_count_p24027_Tomas_Analysis.csv", row.names = 1)
+```
+
+```{r Normalize Counts with DESeq2}
+#convert counts to dataframe 
+cd <- data.frame(row.names = colnames(counts))
+#Create DESeq2 object
+dds_GSVA <- DESeqDataSetFromMatrix(counts, cd, design = ~1)
+#Remove genes with low counts
+dds_GSVA <- dds_GSVA[rowSums(counts(dds_GSVA) >= 10) >= 2, ]
+#Estimate size factors
+dds_GSVA <- estimateSizeFactors(dds_GSVA)
+#Normalize
+vsd_GSVA <- vst(dds_GSVA, blind = TRUE)
+#Create matrix for GSVA
+expr_for_gsva <- assay(vsd_GSVA)
+```
+
+```{r Map Ensembl IDs to gene symbols if available}
+# Separate rows into Ensembl IDs vs. other gene symbols
+ensembl_rows <- grepl("^ENSMMUG", rownames(expr_for_gsva))
+ensembl_ids <- rownames(expr_for_gsva)[ensembl_rows]
+other_symbols <- rownames(expr_for_gsva)[!ensembl_rows]
+
+# Connect to Ensembl
+ensembl_macaque <- useMart("ensembl", dataset = "mmulatta_gene_ensembl")
+ensembl_human   <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+
+# Map Ensembl macaque IDs to human symbols
+ensembl_map <- getBM(
+  attributes = c("ensembl_gene_id", "hsapiens_homolog_associated_gene_name"),
+  filters = "ensembl_gene_id",
+  values = ensembl_ids,
+  mart = ensembl_macaque
+)
+
+# Create a mapping vector (default to original ID if no human ortholog found)
+human_symbols <- setNames(ensembl_map$hsapiens_homolog_associated_gene_name,
+                          ensembl_map$ensembl_gene_id)
+
+# Replace Ensembl IDs with human symbols, keep unmapped IDs as original
+new_rownames <- sapply(rownames(expr_for_gsva), function(x) {
+  if (x %in% names(human_symbols)) {
+    human_symbols[[x]]
+  } else {
+    x
+  }
+})
+
+rownames(expr_for_gsva) <- new_rownames
+head(expr_for_gsva)
+
+# Collapse duplicated gene symbols by averaging
+expr_for_gsva <- expr_for_gsva %>%
+  as.data.frame() %>%
+  group_by(rownames(expr_for_gsva)) %>%
+  summarise(across(everything(), mean)) %>%
+  column_to_rownames(var = "rownames(expr_for_gsva)")
+
+# Remove rows with blank or missing rownames
+expr_for_gsva <- expr_for_gsva[rownames(expr_for_gsva) != "" & !is.na(rownames(expr_for_gsva)), ]
+
+# Make sure it's a numeric matrix
+expr_mat <- as.matrix(expr_for_gsva)
+```
+
+```{r GSVA analysis - Hallmark gene set}
+#Load hallmark gene sets from MSigDB
+m_df_hallmark <- msigdbr(species = "Homo sapiens", category = "H")
+
+# Convert to list format
+gene_sets_hallmark <- split(x = m_df_hallmark$gene_symbol, f = m_df_hallmark$gs_name)
+
+#Run GSVA
+gsva_res_hallmark <- gsva(gsvaParam(expr_mat, gene_sets_hallmark))
+
+#save results
+write.csv(x = gsva_res_hallmark, file = "results/gsva_res_hallmark.csv")
+```
+
+```{r GSVA Analysis - GOBP gene set}
+#Load GOBP gene set
+m_df_gobp <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "BP")
+
+# Convert to list format
+gene_sets_gobp <- split(x = m_df_gobp$gene_symbol, f = m_df_gobp$gs_name)
+
+#Run GSVA
+gsva_res_gobp <- gsva(gsvaParam(expr_mat, gene_sets_gobp))
+
+#save results
+write.csv(x = gsva_res_gobp, file = "results/gsva_res_GOBP.csv")
+```
+
+```{r GSVA Analysis - Reactome gene set}
+#Load Reactome gene set
+m_df_reactome <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "REACTOME")
+
+# Convert to list format
+gene_sets_reactome <- split(x = m_df_reactome$gene_symbol, f = m_df_reactome$gs_name)
+
+#Run GSVA
+gsva_res_reactome <- gsva(gsvaParam(expr_mat, gene_sets_reactome))
+
+#save results
+write.csv(x = gsva_res_reactome, file = "results/gsva_res_Reactome.csv")
+```
